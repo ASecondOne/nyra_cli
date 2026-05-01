@@ -5,4 +5,6 @@ edition = "2024"
 
 [dependencies]
 colored = "3.1.1"
+reedline = "0.47.0"
 rustyline = "18.0.0"
+terminal_size = "0.4.4"
