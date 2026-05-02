@@ -1,11 +1,16 @@
 use std::{
     borrow::Cow,
     cell::{Cell, RefCell},
-    io,
     path::{Path, PathBuf},
-    process::{Command, ExitStatus},
+    process::Command,
+    sync::{Arc, Mutex},
 };
 
+use colored::Colorize;
+use nix::{
+    sys::signal::{kill, Signal as NixSignal},
+    unistd::Pid,
+};
 use reedline::{Prompt, PromptEditMode, PromptHistorySearch, Reedline, Signal};
 
 #[derive(Clone)]
@@ -22,18 +27,19 @@ struct NyPrompt {
 impl Prompt for NyPrompt {
     fn render_prompt_left(&self) -> Cow<'_, str> {
         match &*self.git_dir.borrow() {
-            Some(branch) => {
-                Cow::Owned(format!("nyracli ({})> ", branch))
-            }
-            None => {
-                Cow::Borrowed("nyracli> ")
-            }
+            Some(branch) => Cow::Owned(format!(
+                "{} {} ",
+                "nyracli".purple(),
+                format!("({branch})>").green()
+            )),
+            None => Cow::Owned(format!("{} ", "nyracli>".purple())),
         }
     }
 
     fn render_prompt_right(&self) -> Cow<'_, str> {
         match self.last_code.get() {
-            Some(code) => Cow::Owned(format!("[{code}]")),
+            Some(0) => Cow::Owned("[0]".green().to_string()),
+            Some(code) => Cow::Owned(format!("[{code}]").red().to_string()),
             None => Cow::Borrowed(""),
         }
     }
@@ -60,7 +66,17 @@ fn main() {
         git_dir: RefCell::new(None),
     };
 
-    *prompt.git_dir.borrow_mut() = check_git_folder();
+    let current_pid: Arc<Mutex<Option<u32>>> = Arc::new(Mutex::new(None));
+
+    {
+        let current_pid = current_pid.clone();
+
+        ctrlc::set_handler(move || {
+            if let Some(pid) = *current_pid.lock().unwrap() {
+                let _ = kill(Pid::from_raw(pid as i32), NixSignal::SIGINT);
+            }
+        }).unwrap();
+    }
 
     loop {
         *prompt.git_dir.borrow_mut() = check_git_folder();
@@ -109,13 +125,8 @@ fn main() {
 
                     _ => {
                         if let Some(cmd) = any_match_exists(&commands, |c| c == parts[0]) {
-                            match run_command(cmd, &parts[1..]) {
-                                Ok(status) => prompt.last_code.set(status.code()),
-                                Err(e) => {
-                                    println!("Error: {e}");
-                                    prompt.last_code.set(Some(1));
-                                }
-                            }
+                            let code = run_command(cmd, &parts[1..], current_pid.clone());
+                            prompt.last_code.set(code);
                         } else {
                             println!("Nothing found");
                             prompt.last_code.set(Some(127));
@@ -124,7 +135,7 @@ fn main() {
                 }
             }
 
-            Ok(Signal::CtrlC) | Ok(Signal::CtrlD) => {
+            Ok(Signal::CtrlD) => {
                 println!();
                 break;
             }
@@ -160,8 +171,23 @@ fn load_commands() -> Vec<Cmd> {
         .collect()
 }
 
-fn run_command(command: Cmd, args: &[&str]) -> Result<ExitStatus, io::Error> {
-    Command::new(command.path).args(args).status()
+fn run_command(
+    command: Cmd,
+    args: &[&str],
+    current_pid: Arc<Mutex<Option<u32>>>,
+) -> Option<i32> {
+    let mut child = Command::new(command.path)
+        .args(args)
+        .spawn()
+        .ok()?;
+
+    *current_pid.lock().unwrap() = Some(child.id());
+
+    let status = child.wait().ok()?;
+
+    *current_pid.lock().unwrap() = None;
+
+    status.code().or(Some(130))
 }
 
 fn check_git_folder() -> Option<String> {
