@@ -1,9 +1,5 @@
 use std::{
-    borrow::Cow,
-    cell::{Cell, RefCell},
-    path::{Path, PathBuf},
-    process::Command,
-    sync::{Arc, Mutex},
+    borrow::Cow, cell::{Cell, RefCell}, fs::{File, OpenOptions}, path::{Path, PathBuf}, process::{Command, Stdio}, sync::{Arc, Mutex}
 };
 
 use colored::Colorize;
@@ -30,7 +26,7 @@ impl Prompt for NyPrompt {
             Some(branch) => Cow::Owned(format!(
                 "{} {} ",
                 "nyracli".purple(),
-                format!("({branch})>").green()
+                format!("({branch})>").bright_black()
             )),
             None => Cow::Owned(format!("{} ", "nyracli>".purple())),
         }
@@ -79,7 +75,7 @@ fn main() {
     }
 
     loop {
-        *prompt.git_dir.borrow_mut() = check_git_folder();
+        *prompt.git_dir.borrow_mut() = git_prompt();
 
         match line_editor.read_line(&prompt) {
             Ok(Signal::Success(input)) => {
@@ -118,6 +114,16 @@ fn main() {
                             Ok(_) => prompt.last_code.set(Some(0)),
                             Err(e) => {
                                 println!("cd: {e}");
+                                prompt.last_code.set(Some(1));
+                            }
+                        }
+                    }
+
+                    "openhere" => {
+                        match Command::new("xdg-open").arg(".").spawn() {
+                            Ok(_) => prompt.last_code.set(Some(0)),
+                            Err(e) => {
+                                println!("openhere: {e}");
                                 prompt.last_code.set(Some(1));
                             }
                         }
@@ -176,10 +182,29 @@ fn run_command(
     args: &[&str],
     current_pid: Arc<Mutex<Option<u32>>>,
 ) -> Option<i32> {
-    let mut child = Command::new(command.path)
-        .args(args)
-        .spawn()
-        .ok()?;
+    let mut cmd = Command::new(command.path);
+
+    if let Some(pos) = args.iter().position(|&r| r == ">" || r == ">>") {
+        let real_args = &args[..pos];
+        let file = args.get(pos + 1)?;
+
+        let file = if args[pos] == ">>" {
+            OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(file)
+                .ok()?
+        } else {
+            File::create(file).ok()?
+        };
+
+        cmd.args(real_args)
+            .stdout(Stdio::from(file));
+    } else {
+        cmd.args(args);
+    }
+
+    let mut child = cmd.spawn().ok()?;
 
     *current_pid.lock().unwrap() = Some(child.id());
 
@@ -190,13 +215,42 @@ fn run_command(
     status.code().or(Some(130))
 }
 
-fn check_git_folder() -> Option<String> {
-    if !Path::new(".git").exists() {
+fn git_prompt() -> Option<String> {
+    let branch = git_out(["branch", "--show-current"])?;
+    if branch.is_empty() {
         return None;
     }
 
+    let status = git_out(["status", "--porcelain"])?;
+    let upstream = git_out(["rev-list", "--left-right", "--count", "HEAD...@{upstream}"])
+        .unwrap_or_default();
+
+    let mut marker = String::new();
+
+    if status.lines().any(|l| l.starts_with("??")) {
+        marker.push('+'); // untracked / unadded
+    }
+
+    if status.lines().any(|l| !l.starts_with("??")) {
+        marker.push('*'); // changed / uncommitted
+    }
+
+    let nums: Vec<&str> = upstream.split_whitespace().collect();
+    if nums.len() == 2 {
+        if nums[0] != "0" {
+            marker.push('↑'); // pushable commits
+        }
+        if nums[1] != "0" {
+            marker.push('↓'); // pullable commits
+        }
+    }
+
+    Some(format!("{branch}{marker}"))
+}
+
+fn git_out<const N: usize>(args: [&str; N]) -> Option<String> {
     let out = Command::new("git")
-        .args(["branch", "--show-current"])
+        .args(args)
         .output()
         .ok()?;
 
@@ -204,11 +258,5 @@ fn check_git_folder() -> Option<String> {
         return None;
     }
 
-    let branch = String::from_utf8_lossy(&out.stdout).trim().to_string();
-
-    if branch.is_empty() {
-        None
-    } else {
-        Some(branch)
-    }
+    Some(String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
