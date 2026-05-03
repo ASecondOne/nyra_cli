@@ -9,4 +9,5 @@ ctrlc = "3.5.2"
 nix = { version = "0.31.2", features = ["signal", "process"] }
 reedline = "0.47.0"
 rustyline = "18.0.0"
+shell-words = "1.1.1"
 terminal_size = "0.4.4"

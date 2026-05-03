@@ -85,9 +85,16 @@ fn main() {
                     continue;
                 }
 
-                let parts: Vec<&str> = input.split_ascii_whitespace().collect();
+                let parts = match shell_words::split(input) {
+                    Ok(parts) => parts,
+                    Err(e) => {
+                        println!("parse error: {e}");
+                        prompt.last_code.set(Some(2));
+                        continue;
+                    }
+                };
                 
-                match parts[0] {
+                match parts[0].as_str() {
                     "exit" => break,
 
                     "print_commands" => {
@@ -131,7 +138,8 @@ fn main() {
 
                     _ => {
                         if let Some(cmd) = any_match_exists(&commands, |c| c == parts[0]) {
-                            let code = run_command(cmd, &parts[1..], current_pid.clone());
+                            let args: Vec<&str> = parts[1..].iter().map(String::as_str).collect();
+                            let code = run_command(cmd, &args, current_pid.clone());
                             prompt.last_code.set(code);
                         } else {
                             println!("Nothing found");
