@@ -389,19 +389,59 @@ fn expand_path(path: &str) -> PathBuf {
     }
 }
 
-fn expand_vars(input: &str, env: &HashMap<String, String>) -> String {
-    input
-        .split_whitespace()
-        .map(|word| {
-            if let Some(name) = word.strip_prefix('$') {
-                env.get(name)
-                    .cloned()
-                    .or_else(|| std::env::var(name).ok())
-                    .unwrap_or_default()
-            } else {
-                word.to_string()
+fn expand_vars(s: &str, env_vars: &HashMap<String, String>) -> String {
+    let mut out = String::new();
+    let chars: Vec<char> = s.chars().collect();
+    let mut i = 0;
+
+    while i < chars.len() {
+        if chars[i] != '$' {
+            out.push(chars[i]);
+            i += 1;
+            continue;
+        }
+
+        // ${VAR}
+        if i + 1 < chars.len() && chars[i + 1] == '{' {
+            let mut j = i + 2;
+
+            while j < chars.len() && chars[j] != '}' {
+                j += 1;
             }
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
+
+            if j < chars.len() {
+                let name: String = chars[i + 2..j].iter().collect();
+                out.push_str(&get_var(&name, env_vars));
+                i = j + 1;
+                continue;
+            }
+        }
+
+        // $VAR
+        let mut j = i + 1;
+
+        while j < chars.len() && (chars[j].is_alphanumeric() || chars[j] == '_') {
+            j += 1;
+        }
+
+        if j == i + 1 {
+            out.push('$');
+            i += 1;
+            continue;
+        }
+
+        let name: String = chars[i + 1..j].iter().collect();
+        out.push_str(&get_var(&name, env_vars));
+        i = j;
+    }
+
+    out
+}
+
+fn get_var(name: &str, env_vars: &HashMap<String, String>) -> String {
+    env_vars
+        .get(name)
+        .cloned()
+        .or_else(|| std::env::var(name).ok())
+        .unwrap_or_default()
 }

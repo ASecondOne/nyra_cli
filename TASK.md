@@ -16,9 +16,9 @@
 ## Environment Variables
 
 * [x] Basic `set KEY=VALUE`
-* [ ] `$VAR` expansion improvements (inside strings)
-* [ ] Support `$VAR/suffix`
-* [ ] Support `${VAR}` syntax
+* [x] `$VAR` expansion improvements (inside strings)
+* [x] Support `$VAR/suffix`
+* [x] Support `${VAR}` syntax
 
 ---
 
