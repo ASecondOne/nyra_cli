@@ -414,6 +414,7 @@ name = "nyra_cli"
 version = "0.1.0"
 dependencies = [
  "colored",
+ "crossterm",
  "ctrlc",
  "nix",
  "reedline",
