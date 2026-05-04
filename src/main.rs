@@ -83,11 +83,12 @@ impl Prompt for NyPrompt {
     fn render_prompt_left(&self) -> Cow<'_, str> {
         match &*self.git_dir.borrow() {
             Some(branch) => Cow::Owned(format!(
-                "{} {} ",
-                "nyracli".purple(),
-                format!("({branch})>").bright_black()
+                "{} {}{} ",
+                current_folder().purple(),
+                format!("({branch})").bright_black(),
+                ">".purple()
             )),
-            None => Cow::Owned(format!("{} ", "nyracli>".purple())),
+            None => Cow::Owned(format!("{}{} ", current_folder().purple(), ">".purple())),
         }
     }
 
@@ -112,7 +113,9 @@ impl Prompt for NyPrompt {
     }
 }
 
-fn main() {
+fn main() {    
+    // startup_banner();
+
     let commands = load_commands();
     
     let mut keybindings = default_emacs_keybindings();
@@ -444,4 +447,15 @@ fn get_var(name: &str, env_vars: &HashMap<String, String>) -> String {
         .cloned()
         .or_else(|| std::env::var(name).ok())
         .unwrap_or_default()
+}
+
+fn current_folder() -> String {
+    std::env::current_dir()
+        .ok()
+        .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
+        .unwrap_or("/".into())
+}
+
+fn startup_banner() {
+    let _ = Command::new("nyaofetch").status();
 }
