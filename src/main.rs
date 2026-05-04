@@ -1,5 +1,5 @@
 use std::{
-    borrow::Cow, cell::{Cell, RefCell}, fs::{File, OpenOptions}, path::PathBuf, process::{Command, Stdio}, sync::{Arc, Mutex}
+    borrow::Cow, cell::{Cell, RefCell}, collections::HashMap, fs::{File, OpenOptions}, path::PathBuf, process::{Command, Stdio}, sync::{Arc, Mutex}
 };
 
 use colored::Colorize;
@@ -143,6 +143,8 @@ fn main() {
         }).unwrap();
     }
 
+    let mut env_vars: HashMap<String, String> = HashMap::new();
+
     loop {
         *prompt.git_dir.borrow_mut() = git_prompt();
 
@@ -205,10 +207,32 @@ fn main() {
                         }
                     }
 
+                    "clear" => {
+                        print!("\x1B[2J\x1B[1;1H");
+                    }
+
+                    "export" | "set" => {
+                        if parts.len() == 1 {
+                            for (k, v) in &env_vars {
+                                println!("${} = {}", k, v)
+                            }
+                        } else {
+                            if let Some(var) = parts.get(1) {
+                                if let Some((key, value)) = var.split_once("=") {
+
+                                    let key = key.strip_prefix('$').unwrap_or(key);
+
+                                    env_vars.insert(key.to_string(), value.to_string());
+                                    prompt.last_code.set(Some(0));
+                                }
+                            }
+                        }
+                    }
+
                     _ => {
                         if let Some(cmd) = any_match_exists(&commands, |c| c == parts[0]) {
                             let args: Vec<&str> = parts[1..].iter().map(String::as_str).collect();
-                            let code = run_command(cmd, &args, current_pid.clone());
+                            let code = run_command(cmd, &args, &env_vars, current_pid.clone());
                             prompt.last_code.set(code);
                         } else {
                             println!("Nothing found");
@@ -257,36 +281,41 @@ fn load_commands() -> Vec<Cmd> {
 fn run_command(
     command: Cmd,
     args: &[&str],
+    env_vars: &HashMap<String, String>,
     current_pid: Arc<Mutex<Option<u32>>>,
 ) -> Option<i32> {
+    let expanded_args: Vec<String> = args
+        .iter()
+        .map(|arg| expand_vars(arg, env_vars))
+        .collect();
+
+    let expanded_refs: Vec<&str> = expanded_args.iter().map(String::as_str).collect();
+
     let mut cmd = Command::new(command.path);
 
-    if let Some(pos) = args.iter().position(|&r| r == ">" || r == ">>") {
-        let real_args = &args[..pos];
-        let file = args.get(pos + 1)?;
+    for (k, v) in env_vars {
+        cmd.env(k, v);
+    }
 
-        let file = if args[pos] == ">>" {
-            OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(file)
-                .ok()?
+    if let Some(pos) = expanded_refs.iter().position(|&r| r == ">" || r == ">>") {
+        let real_args = &expanded_refs[..pos];
+        let file = expanded_refs.get(pos + 1)?;
+
+        let file = if expanded_refs[pos] == ">>" {
+            OpenOptions::new().create(true).append(true).open(file).ok()?
         } else {
             File::create(file).ok()?
         };
 
-        cmd.args(real_args)
-            .stdout(Stdio::from(file));
+        cmd.args(real_args).stdout(Stdio::from(file));
     } else {
-        cmd.args(args);
+        cmd.args(&expanded_refs);
     }
 
     let mut child = cmd.spawn().ok()?;
-
     *current_pid.lock().unwrap() = Some(child.id());
 
     let status = child.wait().ok()?;
-
     *current_pid.lock().unwrap() = None;
 
     status.code().or(Some(130))
@@ -358,4 +387,21 @@ fn expand_path(path: &str) -> PathBuf {
     } else {
         PathBuf::from(path)
     }
+}
+
+fn expand_vars(input: &str, env: &HashMap<String, String>) -> String {
+    input
+        .split_whitespace()
+        .map(|word| {
+            if let Some(name) = word.strip_prefix('$') {
+                env.get(name)
+                    .cloned()
+                    .or_else(|| std::env::var(name).ok())
+                    .unwrap_or_default()
+            } else {
+                word.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
