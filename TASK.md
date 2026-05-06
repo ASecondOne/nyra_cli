@@ -62,8 +62,8 @@
 
 * [x] Basic parsing
 * [x] Quote-aware parsing
-* [ ] Pipe parsing (`|`)
-* [ ] Multiple pipes (`cmd1 | cmd2 | cmd3`)
+* [x] Pipe parsing (`|`)
+* [x] Multiple pipes (`cmd1 | cmd2 | cmd3`)
 * [ ] Input redirection (`<`)
 * [ ] Command chaining (`&&`, `||`, `;`)
 

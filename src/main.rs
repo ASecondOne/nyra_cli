@@ -20,6 +20,11 @@ struct NyPrompt {
     git_dir:  RefCell<Option<String>>
 }
 
+struct PipePart {
+    cmd: String,
+    args: Vec<String>
+}
+
 struct CdCompleter;
 
 impl Completer for CdCompleter {
@@ -233,6 +238,12 @@ fn main() {
                     }
 
                     _ => {
+                        if let Some(pipe_parts) = parse_pipe(&parts) {
+                            let code = run_pipe(pipe_parts);
+                            prompt.last_code.set(code);
+                            continue;
+                        }
+
                         if let Some(cmd) = any_match_exists(&commands, |c| c == parts[0]) {
                             let args: Vec<&str> = parts[1..].iter().map(String::as_str).collect();
                             let code = run_command(cmd, &args, &env_vars, current_pid.clone());
@@ -458,4 +469,55 @@ fn current_folder() -> String {
 
 fn startup_banner() {
     let _ = Command::new("nyaofetch").status();
+}
+
+fn parse_pipe(parts: &[String]) -> Option<Vec<PipePart>> {
+    let mut out = Vec::new();
+
+    for chunk in parts.split(|p| p == "|") {
+        if chunk.is_empty() {
+            return None;
+        }
+
+        out.push(PipePart {
+            cmd: chunk[0].clone(),
+            args: chunk[1..].to_vec(),
+        });
+    }
+
+    if out.len() > 1 { Some(out) } else { None }
+}
+
+fn run_pipe(parts: Vec<PipePart>) -> Option<i32> {
+    let mut children = Vec::new();
+    let mut prev_stdout = None;
+
+    for (i, part) in parts.iter().enumerate() {
+        let is_last = i == parts.len() - 1;
+
+        let mut cmd = Command::new(&part.cmd);
+        cmd.args(&part.args);
+
+        if let Some(stdout) = prev_stdout.take() {
+            cmd.stdin(Stdio::from(stdout));
+        }
+
+        if !is_last {
+            cmd.stdout(Stdio::piped());
+        }
+
+        let mut child = cmd.spawn().ok()?;
+        prev_stdout = child.stdout.take();
+
+        children.push(child);
+    }
+
+    let mut last_code = Some(0);
+
+    for mut child in children {
+        let status = child.wait().ok()?;
+        last_code = status.code().or(Some(130));
+    }
+
+    last_code
 }
