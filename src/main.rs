@@ -1,5 +1,5 @@
 use std::{
-    borrow::Cow, cell::{Cell, RefCell}, collections::HashMap, fs::{File, OpenOptions}, path::PathBuf, process::{Command, Stdio}, sync::{Arc, Mutex}
+    borrow::Cow, cell::{Cell, RefCell}, collections::HashMap, env::var, fs::{File, OpenOptions}, path::PathBuf, process::{Command, Stdio}, sync::{Arc, Mutex}
 };
 
 use colored::Colorize;
@@ -7,7 +7,7 @@ use nix::{
     sys::signal::{kill, Signal as NixSignal},
     unistd::Pid,
 };
-use reedline::{ColumnarMenu, Completer, Emacs, KeyCode, KeyModifiers, Keybindings, MenuBuilder, Prompt, PromptEditMode, PromptHistorySearch, Reedline, ReedlineEvent, ReedlineMenu, Signal, Suggestion, default_emacs_keybindings};
+use reedline::{ColumnarMenu, Completer, Emacs, FileBackedHistory, KeyCode, KeyModifiers, Keybindings, MenuBuilder, Prompt, PromptEditMode, PromptHistorySearch, Reedline, ReedlineEvent, ReedlineMenu, Signal, Suggestion, default_emacs_keybindings};
 
 #[derive(Clone)]
 struct Cmd {
@@ -25,62 +25,39 @@ struct PipePart {
     args: Vec<String>
 }
 
-struct CdCompleter;
+struct NyCompleter {
+    commands: Vec<Cmd>
+}
 
-impl Completer for CdCompleter {
+impl Completer for NyCompleter {
     fn complete(&mut self, line: &str, pos: usize) -> Vec<Suggestion> {
         let before = &line[..pos];
 
-        if !before.starts_with("cd ") {
-            return vec![];
+        if before.starts_with("cd ") {
+            return complete_cd(line, pos)
         }
 
-        let query = before.strip_prefix("cd ").unwrap_or("");
+        if before.contains(' ') {
+        return vec![];
+    }
 
-        let (dir_part, name_part) = match query.rsplit_once('/') {
-            Some((dir, name)) => (format!("{dir}/"), name),
-            None => ("".to_string(), query),
-        };
-
-        let read_dir_path = if dir_part.is_empty() {
-            PathBuf::from(".")
-        } else {
-            expand_path(&dir_part)
-        };
-
-        std::fs::read_dir(read_dir_path)
-            .ok()
-            .into_iter()
-            .flatten()
-            .flatten()
-            .filter_map(|e| {
-                let path = e.path();
-
-                if !path.is_dir() {
-                    return None;
-                }
-
-                let name = path.file_name()?.to_string_lossy().to_string();
-
-                if !name.starts_with(name_part) {
-                    return None;
-                }
-
-                Some(Suggestion {
-                    value: format!("{dir_part}{name}"),
-                    description: None,
-                    extra: None,
-                    span: reedline::Span {
-                        start: 3,
-                        end: pos,
-                    },
-                    append_whitespace: false,
-                    style: None,
-                    display_override: Some(name.clone()),
-                    match_indices: None,
-                })
-            })
-            .collect()
+    self.commands
+        .iter()
+        .filter(|cmd| cmd.name.starts_with(before))
+        .map(|cmd| Suggestion {
+            value: cmd.name.clone(),
+            description: None,
+            extra: None,
+            span: reedline::Span {
+                start: 0,
+                end: pos,
+            },
+            append_whitespace: true,
+            style: None,
+            display_override: None,
+            match_indices: None,
+        })
+        .collect()
     }
 }
 
@@ -126,13 +103,24 @@ fn main() {
     let mut keybindings = default_emacs_keybindings();
         add_completion_keybinds(&mut keybindings);
 
-        let edit_mode = Box::new(Emacs::new(keybindings));
-        let completion_menu = Box::new(ColumnarMenu::default().with_name("completion_menu"));
+    let edit_mode = Box::new(Emacs::new(keybindings));
+    let completion_menu = Box::new(ColumnarMenu::default().with_name("completion_menu"));
 
-        let mut line_editor = Reedline::create()
-            .with_completer(Box::new(CdCompleter))
-            .with_menu(ReedlineMenu::EngineCompleter(completion_menu))
-            .with_edit_mode(edit_mode);
+    let history = Box::new(
+        FileBackedHistory::with_file(
+            1000,
+            history_path(),
+        ).unwrap()
+    );
+
+
+    let mut line_editor = Reedline::create()
+        .with_history(history)
+        .with_completer(Box::new(NyCompleter {
+            commands: commands.clone()
+        }))
+        .with_menu(ReedlineMenu::EngineCompleter(completion_menu))
+        .with_edit_mode(edit_mode);
 
     let prompt = NyPrompt {
         last_code: Cell::new(None),
@@ -520,4 +508,60 @@ fn run_pipe(parts: Vec<PipePart>) -> Option<i32> {
     }
 
     last_code
+}
+
+fn history_path() -> PathBuf {
+    let home = std::env::var("HOME").unwrap_or(".".into());
+    PathBuf::from(home).join(".nyracli_history")
+}
+
+fn complete_cd(line: &str, pos: usize) -> Vec<Suggestion> {
+    let before = &line[..pos];
+
+    let query = before.strip_prefix("cd ").unwrap_or("");
+
+    let (dir_part, name_part) = match query.rsplit_once('/') {
+        Some((dir, name)) => (format!("{dir}/"), name),
+        None => ("".to_string(), query),
+    };
+
+    let read_dir_path = if dir_part.is_empty() {
+        PathBuf::from(".")
+    } else {
+        expand_path(&dir_part)
+    };
+
+    std::fs::read_dir(read_dir_path)
+        .ok()
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|e| {
+            let path = e.path();
+
+            if !path.is_dir() {
+                return None;
+            }
+
+            let name = path.file_name()?.to_string_lossy().to_string();
+
+            if !name.starts_with(name_part) {
+                return None;
+            }
+
+            Some(Suggestion {
+                value: format!("{dir_part}{name}"),
+                description: None,
+                extra: None,
+                span: reedline::Span {
+                    start: 3,
+                    end: pos,
+                },
+                append_whitespace: false,
+                style: None,
+                display_override: Some(name.clone()),
+                match_indices: None,
+            })
+        })
+        .collect()
 }
