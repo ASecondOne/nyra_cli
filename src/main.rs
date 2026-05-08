@@ -1,5 +1,5 @@
 use std::{
-    borrow::Cow, cell::{Cell, RefCell}, collections::HashMap, env::var, fs::{File, OpenOptions}, path::PathBuf, process::{Command, Stdio}, sync::{Arc, Mutex}
+    borrow::Cow, cell::{Cell, RefCell}, collections::HashMap, fs::{File, OpenOptions}, path::PathBuf, process::{Command, Stdio}, sync::{Arc, Mutex}
 };
 
 use colored::Colorize;
@@ -8,6 +8,7 @@ use nix::{
     unistd::Pid,
 };
 use reedline::{ColumnarMenu, Completer, Emacs, FileBackedHistory, KeyCode, KeyModifiers, Keybindings, MenuBuilder, Prompt, PromptEditMode, PromptHistorySearch, Reedline, ReedlineEvent, ReedlineMenu, Signal, Suggestion, default_emacs_keybindings};
+use strsim::jaro_winkler;
 
 #[derive(Clone)]
 struct Cmd {
@@ -141,6 +142,8 @@ fn main() {
 
     let mut env_vars: HashMap<String, String> = HashMap::new();
 
+    let mut last_cd_dir: Option<String> = None;
+
     loop {
         *prompt.git_dir.borrow_mut() = git_prompt();
 
@@ -180,9 +183,19 @@ fn main() {
                         let path = if raw.starts_with('~') {
                             let home = std::env::var("HOME").unwrap();
                             raw.replacen('~', &home, 1)
+                        } else if raw.starts_with('-') {
+                            if last_cd_dir.is_some() {
+                                last_cd_dir.clone().unwrap()
+                            } else {
+                                println!("cd: No previous dir yet");
+                                prompt.last_code.set(Some(1));
+                                continue;
+                            }
                         } else {
                             raw
                         };
+
+                        last_cd_dir = Some(std::env::current_dir().unwrap().to_string_lossy().to_string());
 
                         match std::env::set_current_dir(&path) {
                             Ok(_) => prompt.last_code.set(Some(0)),
@@ -225,6 +238,33 @@ fn main() {
                         }
                     }
 
+                    "unset" => {
+                        if let Some(v) = parts.get(1) {
+                            let var = v.strip_prefix("$").unwrap_or(v);
+                            env_vars.remove(var);
+
+                            prompt.last_code.set(Some(0));
+                        } else {
+                            println!("unset: missing argument");
+                            prompt.last_code.set(Some(1));
+                        }
+                    }
+
+                    "which" => {
+                        if let Some(name) = parts.get(1) {
+                            if let Some(c) = commands.iter().find(|c| c.name == *name) {
+                                println!("{}", c.path.to_string_lossy());
+                                prompt.last_code.set(Some(0));
+                            } else {
+                                println!("{name} not found");
+                                prompt.last_code.set(Some(1));
+                            }
+                        } else {
+                            println!("which: missing argument");
+                            prompt.last_code.set(Some(1));
+                        }
+                    }
+
                     _ => {
                         if let Some(pipe_parts) = parse_pipe(&parts) {
                             let code = run_pipe(pipe_parts);
@@ -238,6 +278,15 @@ fn main() {
                             prompt.last_code.set(code);
                         } else {
                             println!("Nothing found");
+                            
+                            let suggestions = fuzzy_commands(&commands, input, |score| score > 0.80);
+                            if suggestions.len() > 0 {
+                                println!("Did you mean one of these?");
+                                for s in suggestions.iter().take(5) {
+                                    print!("{s} ")
+                                }
+                            }
+                            
                             prompt.last_code.set(Some(127));
                         }
                     }
@@ -564,4 +613,22 @@ fn complete_cd(line: &str, pos: usize) -> Vec<Suggestion> {
             })
         })
         .collect()
+}
+
+fn fuzzy_commands<F>(commands: &[Cmd], input: &str, keep: F) -> Vec<String>
+where
+    F: Fn(f64) -> bool,
+{
+    let mut scores: Vec<(String, f64)> = commands
+        .iter()
+        .map(|cmd| {
+            let score = jaro_winkler(input, &cmd.name);
+            (cmd.name.clone(), score)
+        })
+        .filter(|(_, score)| keep(*score))
+        .collect();
+
+    scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+
+    scores.into_iter().map(|(name, _)| name).collect()
 }
