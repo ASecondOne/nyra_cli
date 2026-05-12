@@ -7,7 +7,7 @@ use nix::{
     sys::signal::{kill, Signal as NixSignal},
     unistd::Pid,
 };
-use reedline::{ColumnarMenu, Completer, Emacs, FileBackedHistory, KeyCode, KeyModifiers, Keybindings, MenuBuilder, Prompt, PromptEditMode, PromptHistorySearch, Reedline, ReedlineEvent, ReedlineMenu, Signal, Suggestion, default_emacs_keybindings};
+use reedline::{ColumnarMenu, Completer, EditCommand, Emacs, FileBackedHistory, KeyCode, KeyModifiers, Keybindings, MenuBuilder, Prompt, PromptEditMode, PromptHistorySearch, Reedline, ReedlineEvent, ReedlineMenu, Signal, Suggestion, default_emacs_keybindings};
 use strsim::jaro_winkler;
 
 #[derive(Clone)]
@@ -102,7 +102,13 @@ fn main() {
     let commands = load_commands();
     
     let mut keybindings = default_emacs_keybindings();
-        add_completion_keybinds(&mut keybindings);
+    keybindings.add_binding(KeyModifiers::ALT, KeyCode::Enter, 
+        ReedlineEvent::Edit(vec![
+            EditCommand::InsertNewline
+        ]
+        ));
+
+    add_completion_keybinds(&mut keybindings);
 
     let edit_mode = Box::new(Emacs::new(keybindings));
     let completion_menu = Box::new(ColumnarMenu::default().with_name("completion_menu"));
