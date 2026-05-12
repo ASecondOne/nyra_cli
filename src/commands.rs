@@ -1,8 +1,5 @@
 use std::{
-    fs::{File, OpenOptions},
-    path::PathBuf,
-    process::{Command, Stdio},
-    sync::{Arc, Mutex},
+    fs::{File, OpenOptions}, path::PathBuf, process::{Command, Stdio}, sync::{Arc, Mutex}
 };
 
 use crate::vars::Vars;
@@ -38,6 +35,12 @@ impl NyCommand {
 
     pub fn get_commands(&self) -> &[Cmd] {
         &self.cmds
+    }
+}
+
+impl Default for NyCommand {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

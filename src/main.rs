@@ -12,7 +12,7 @@ use nix::{
     unistd::Pid,
 };
 use reedline::{
-    ColumnarMenu, EditCommand, Emacs, FileBackedHistory, KeyCode, KeyModifiers, Keybindings,
+    ColumnarMenu, EditCommand, Emacs, FileBackedHistory, KeyCode, KeyModifiers,
     MenuBuilder, Prompt, PromptEditMode, PromptHistorySearch, Reedline, ReedlineEvent,
     ReedlineMenu, Signal, default_emacs_keybindings,
 };
@@ -263,7 +263,7 @@ fn main() {
                                 fuzzy_commands(nycommand.get_commands(), input, |score| {
                                     score > 0.80
                                 });
-                            if suggestions.len() > 0 {
+                            if !suggestions.is_empty() {
                                 println!("Did you mean one of these?");
                                 for s in suggestions.iter().take(5) {
                                     print!("{s} ")

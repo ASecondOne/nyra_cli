@@ -4,6 +4,12 @@ pub struct Vars {
     vars: HashMap<String, String>,
 }
 
+impl Default for Vars {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Vars {
     pub fn new() -> Vars {
         Vars {
@@ -66,7 +72,7 @@ impl Vars {
         }
     }
 
-    pub fn insert(&mut self, line: &String) -> Result<i32, String> {
+    pub fn insert(&mut self, line: &str) -> Result<i32, String> {
         if let Some((key, value)) = line.split_once("=") {
             let key = key.strip_prefix('$').unwrap_or(key);
 
@@ -78,8 +84,8 @@ impl Vars {
         Err("An unexpected Error Accoured".to_string())
     }
 
-    pub fn remove(&mut self, key: &String) -> Result<i32, String> {
-        let var = key.as_str().strip_prefix("$").unwrap_or(key.as_str());
+    pub fn remove(&mut self, key: &str) -> Result<i32, String> {
+        let var = key.strip_prefix("$").unwrap_or(key);
 
         if self.vars.remove(var).is_some() {
             Ok(0)
