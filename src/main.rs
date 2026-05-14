@@ -2,7 +2,7 @@ use std::{
     borrow::Cow,
     cell::{Cell, RefCell},
     path::PathBuf,
-    process::{Command, Stdio},
+    process::Command,
     sync::{Arc, Mutex},
 };
 
@@ -19,17 +19,12 @@ use reedline::{
 use strsim::jaro_winkler;
 
 use nyra_cli::{
-    commands::{Cmd, NyCommand, run_command}, completer::NyCompleter, git_ux::git_prompt, vars::Vars
+    alias::NyAlias, commands::{Cmd, NyCommand, run_command}, completer::NyCompleter, git_ux::git_prompt, pipe::NyPipe, vars::Vars
 };
 
 struct NyPrompt {
     last_code: Cell<Option<i32>>,
     git_dir: RefCell<Option<String>>,
-}
-
-struct PipePart {
-    cmd: String,
-    args: Vec<String>,
 }
 
 impl Prompt for NyPrompt {
@@ -73,6 +68,8 @@ fn main() {
     nycommand.load_commands();
 
     let mut env_vars = Vars::new();
+
+    let mut nyalias = NyAlias::new();
 
     let mut keybindings = default_emacs_keybindings();
     keybindings.add_binding(
@@ -243,9 +240,19 @@ fn main() {
                         }
                     }
 
+                    "alias" => {
+                        match nyalias.parse_input(parts) {
+                            Ok(()) => prompt.last_code.set(Some(0)),
+                            Err(msg) => {
+                                println!("{msg}");
+                                prompt.last_code.set(Some(1))
+                            }
+                        }
+                    }
+
                     _ => {
-                        if let Some(pipe_parts) = parse_pipe(&parts) {
-                            let code = run_pipe(pipe_parts);
+                        if let Some(pipe) = NyPipe::new(&parts) {
+                            let code = pipe.run();
                             prompt.last_code.set(code);
                             continue;
                         }
@@ -307,57 +314,6 @@ fn current_folder() -> String {
 
 fn _startup_banner() {
     let _ = Command::new("nyaofetch").status();
-}
-
-fn parse_pipe(parts: &[String]) -> Option<Vec<PipePart>> {
-    let mut out = Vec::new();
-
-    for chunk in parts.split(|p| p == "|") {
-        if chunk.is_empty() {
-            return None;
-        }
-
-        out.push(PipePart {
-            cmd: chunk[0].clone(),
-            args: chunk[1..].to_vec(),
-        });
-    }
-
-    if out.len() > 1 { Some(out) } else { None }
-}
-
-fn run_pipe(parts: Vec<PipePart>) -> Option<i32> {
-    let mut children = Vec::new();
-    let mut prev_stdout = None;
-
-    for (i, part) in parts.iter().enumerate() {
-        let is_last = i == parts.len() - 1;
-
-        let mut cmd = Command::new(&part.cmd);
-        cmd.args(&part.args);
-
-        if let Some(stdout) = prev_stdout.take() {
-            cmd.stdin(Stdio::from(stdout));
-        }
-
-        if !is_last {
-            cmd.stdout(Stdio::piped());
-        }
-
-        let mut child = cmd.spawn().ok()?;
-        prev_stdout = child.stdout.take();
-
-        children.push(child);
-    }
-
-    let mut last_code = Some(0);
-
-    for mut child in children {
-        let status = child.wait().ok()?;
-        last_code = status.code().or(Some(130));
-    }
-
-    last_code
 }
 
 fn history_path() -> PathBuf {

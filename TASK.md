@@ -40,7 +40,7 @@
 * [x] `cd` folder completion
 * [x] Path-aware completion (`~/`, `/`, nested folders)
 * [x] Clean display (no full path spam)
-* [ ] Command name completion
+* [x] Command name completion
 * [ ] File completion (not just folders)
 * [ ] Smarter matching (fuzzy / partial)
 
@@ -81,8 +81,8 @@
 
 * [x] `clear` builtin
 * [x] `set` list all variables
-* [ ] `unset` variables
-* [ ] `which` command lookup
+* [x] `unset` variables
+* [x] `which` command lookup
 * [ ] `alias` support
 
 ---
@@ -98,7 +98,6 @@
 
 ## Future / Advanced
 
-* [ ] Background jobs (`&`)
 * [ ] Job control
 * [ ] Subcommands / plugins
 * [ ] Config file (~/.nyracli)
