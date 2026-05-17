@@ -83,7 +83,7 @@
 * [x] `set` list all variables
 * [x] `unset` variables
 * [x] `which` command lookup
-* [ ] `alias` support
+* [x] `alias` support
 
 ---
 

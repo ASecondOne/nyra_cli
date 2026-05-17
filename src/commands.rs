@@ -1,5 +1,8 @@
 use std::{
-    fs::{File, OpenOptions}, path::PathBuf, process::{Command, Stdio}, sync::{Arc, Mutex}
+    fs::{File, OpenOptions},
+    path::PathBuf,
+    process::{Command, Stdio},
+    sync::{Arc, Mutex},
 };
 
 use crate::vars::Vars;

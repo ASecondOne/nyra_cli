@@ -6,7 +6,7 @@ struct PipePart {
 }
 
 pub struct NyPipe {
-    pipeparts: Vec<PipePart>
+    pipeparts: Vec<PipePart>,
 }
 
 impl NyPipe {
@@ -14,7 +14,7 @@ impl NyPipe {
         if let Some(pipeparts) = Self::parse_pipe(parts) {
             return Some(Self { pipeparts });
         }
-        
+
         None
     }
 

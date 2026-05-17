@@ -12,14 +12,19 @@ use nix::{
     unistd::Pid,
 };
 use reedline::{
-    ColumnarMenu, EditCommand, Emacs, FileBackedHistory, KeyCode, KeyModifiers,
-    MenuBuilder, Prompt, PromptEditMode, PromptHistorySearch, Reedline, ReedlineEvent,
-    ReedlineMenu, Signal, default_emacs_keybindings,
+    ColumnarMenu, EditCommand, Emacs, FileBackedHistory, KeyCode, KeyModifiers, MenuBuilder,
+    Prompt, PromptEditMode, PromptHistorySearch, Reedline, ReedlineEvent, ReedlineMenu, Signal,
+    default_emacs_keybindings,
 };
 use strsim::jaro_winkler;
 
 use nyra_cli::{
-    alias::NyAlias, commands::{Cmd, NyCommand, run_command}, completer::NyCompleter, git_ux::git_prompt, pipe::NyPipe, vars::Vars
+    alias::NyAlias,
+    commands::{Cmd, NyCommand, run_command},
+    completer::NyCompleter,
+    git_ux::git_prompt,
+    pipe::NyPipe,
+    vars::Vars,
 };
 
 struct NyPrompt {
@@ -139,6 +144,16 @@ fn main() {
                     }
                 };
 
+                let parts = match nyalias.resolve_alias(&parts) {
+                    Ok(Some(expanded)) => expanded,
+                    Ok(None) => parts,
+                    Err(msg) => {
+                        println!("{msg}");
+                        prompt.last_code.set(Some(1));
+                        continue;
+                    }
+                };
+
                 match parts[0].as_str() {
                     "exit" => break,
 
@@ -240,15 +255,13 @@ fn main() {
                         }
                     }
 
-                    "alias" => {
-                        match nyalias.parse_input(parts) {
-                            Ok(()) => prompt.last_code.set(Some(0)),
-                            Err(msg) => {
-                                println!("{msg}");
-                                prompt.last_code.set(Some(1))
-                            }
+                    "alias" => match nyalias.parse_input(parts) {
+                        Ok(()) => prompt.last_code.set(Some(0)),
+                        Err(msg) => {
+                            println!("{msg}");
+                            prompt.last_code.set(Some(1))
                         }
-                    }
+                    },
 
                     _ => {
                         if let Some(pipe) = NyPipe::new(&parts) {
