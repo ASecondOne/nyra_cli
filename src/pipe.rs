@@ -1,5 +1,7 @@
 use std::process::{Command, Stdio};
 
+use crate::commands::apply_redirects;
+
 struct PipePart {
     cmd: String,
     args: Vec<String>,
@@ -10,20 +12,21 @@ pub struct NyPipe {
 }
 
 impl NyPipe {
-    pub fn new(parts: &[String]) -> Option<Self> {
-        if let Some(pipeparts) = Self::parse_pipe(parts) {
-            return Some(Self { pipeparts });
+    pub fn new(parts: &[String]) -> Result<Option<Self>, String> {
+        if !parts.iter().any(|part| part == "|") {
+            return Ok(None);
         }
 
-        None
+        let pipeparts = Self::parse_pipe(parts)?;
+        Ok(Some(Self { pipeparts }))
     }
 
-    fn parse_pipe(parts: &[String]) -> Option<Vec<PipePart>> {
+    fn parse_pipe(parts: &[String]) -> Result<Vec<PipePart>, String> {
         let mut out = Vec::new();
 
         for chunk in parts.split(|p| p == "|") {
             if chunk.is_empty() {
-                return None;
+                return Err("pipe: missing command around '|'".to_string());
             }
 
             out.push(PipePart {
@@ -32,10 +35,14 @@ impl NyPipe {
             });
         }
 
-        if out.len() > 1 { Some(out) } else { None }
+        if out.len() > 1 {
+            Ok(out)
+        } else {
+            Err("pipe: missing command around '|'".to_string())
+        }
     }
 
-    pub fn run(&self) -> Option<i32> {
+    pub fn run(&self) -> Result<i32, String> {
         let mut children = Vec::new();
         let mut prev_stdout = None;
 
@@ -43,29 +50,35 @@ impl NyPipe {
             let is_last = i == self.pipeparts.len() - 1;
 
             let mut cmd = Command::new(&part.cmd);
-            cmd.args(&part.args);
 
             if let Some(stdout) = prev_stdout.take() {
                 cmd.stdin(Stdio::from(stdout));
+            }
+
+            let redirected = apply_redirects(&mut cmd, &part.args)?;
+            cmd.args(&redirected.args);
+
+            if redirected.stdout_redirected && !is_last {
+                return Err("pipe: only the last command can redirect output".to_string());
             }
 
             if !is_last {
                 cmd.stdout(Stdio::piped());
             }
 
-            let mut child = cmd.spawn().ok()?;
+            let mut child = cmd.spawn().map_err(|err| format!("{}: {err}", part.cmd))?;
             prev_stdout = child.stdout.take();
 
             children.push(child);
         }
 
-        let mut last_code = Some(0);
+        let mut last_code = 0;
 
         for mut child in children {
-            let status = child.wait().ok()?;
-            last_code = status.code().or(Some(130));
+            let status = child.wait().map_err(|err| err.to_string())?;
+            last_code = status.code().unwrap_or(130);
         }
 
-        last_code
+        Ok(last_code)
     }
 }

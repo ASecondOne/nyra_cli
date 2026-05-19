@@ -30,7 +30,7 @@
 * [x] Show modified files (`*`)
 * [x] Show pushable commits (`↑`)
 * [x] Show pullable commits (`↓`)
-* [ ] Optimize git calls (avoid running multiple git commands every loop)
+* [x] Optimize git calls (avoid running multiple git commands every loop)
 
 ---
 
@@ -41,8 +41,8 @@
 * [x] Path-aware completion (`~/`, `/`, nested folders)
 * [x] Clean display (no full path spam)
 * [x] Command name completion
-* [ ] File completion (not just folders)
-* [ ] Smarter matching (fuzzy / partial)
+* [x] File completion (not just folders)
+* [x] Smarter matching (fuzzy / partial)
 
 ---
 
@@ -51,9 +51,9 @@
 * [x] Colored prompt
 * [x] Right-side exit code
 * [x] Git branch in prompt
-* [ ] Better spacing / alignment polish
-* [ ] Configurable prompt
-* [ ] Optional icons / symbols toggle
+* [x] Better spacing / alignment polish
+* [x] Configurable prompt
+* [x] Optional icons / symbols toggle
 * [ ] Color key words
 
 ---
@@ -64,15 +64,15 @@
 * [x] Quote-aware parsing
 * [x] Pipe parsing (`|`)
 * [x] Multiple pipes (`cmd1 | cmd2 | cmd3`)
-* [ ] Input redirection (`<`)
-* [ ] Command chaining (`&&`, `||`, `;`)
+* [x] Input redirection (`<`)
+* [x] Command chaining (`&&`, `||`, `;`)
 
 ---
 
 ## History
 
-* [ ] Persistent history file
-* [ ] Ctrl+R reverse search
+* [x] Persistent history file
+* [x] Ctrl+R reverse search
 * [ ] Fancy history UI (fzf-style maybe 👀)
 
 ---

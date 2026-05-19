@@ -1,10 +1,9 @@
 use std::{
     collections::{HashMap, HashSet},
-    fs::{File, OpenOptions},
-    process::{Command, Stdio},
+    process::Command,
 };
 
-use crate::pipe::NyPipe;
+use crate::{commands::apply_redirects, pipe::NyPipe};
 
 pub struct NyAlias {
     alias: HashMap<String, String>,
@@ -35,10 +34,12 @@ impl NyAlias {
         Ok(())
     }
 
-    pub fn run_alias(&self, input: Vec<String>) -> Option<i32> {
-        let parts = self.resolve_alias(&input).ok().flatten()?;
+    pub fn run_alias(&self, input: Vec<String>) -> Result<i32, String> {
+        let parts = self
+            .resolve_alias(&input)?
+            .ok_or("Alias not found".to_string())?;
 
-        if let Some(pipe) = NyPipe::new(&parts) {
+        if let Some(pipe) = NyPipe::new(&parts)? {
             return pipe.run();
         }
 
@@ -101,29 +102,18 @@ impl NyAlias {
     }
 }
 
-fn run_parts(parts: &[String]) -> Option<i32> {
-    let program = parts.first()?;
+fn run_parts(parts: &[String]) -> Result<i32, String> {
+    let program = parts.first().ok_or("missing command".to_string())?;
     let mut cmd = Command::new(program);
 
-    if let Some(pos) = parts.iter().position(|part| part == ">" || part == ">>") {
-        let real_args = &parts[1..pos];
-        let file = parts.get(pos + 1)?;
+    let redirected = apply_redirects(&mut cmd, &parts[1..])?;
+    cmd.args(&redirected.args);
 
-        let file = if parts[pos] == ">>" {
-            OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(file)
-                .ok()?
-        } else {
-            File::create(file).ok()?
-        };
+    let status = cmd
+        .spawn()
+        .map_err(|err| format!("{program}: {err}"))?
+        .wait()
+        .map_err(|err| format!("{program}: {err}"))?;
 
-        cmd.args(real_args).stdout(Stdio::from(file));
-    } else {
-        cmd.args(&parts[1..]);
-    }
-
-    let status = cmd.spawn().ok()?.wait().ok()?;
-    status.code().or(Some(130))
+    Ok(status.code().unwrap_or(130))
 }

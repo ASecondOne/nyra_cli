@@ -17,6 +17,11 @@ pub struct NyCommand {
     cmds: Vec<Cmd>,
 }
 
+pub struct RedirectedArgs {
+    pub args: Vec<String>,
+    pub stdout_redirected: bool,
+}
+
 impl NyCommand {
     pub fn new() -> Self {
         NyCommand { cmds: Vec::new() }
@@ -52,10 +57,8 @@ pub fn run_command(
     args: &[&str],
     env_vars: &Vars,
     current_pid: Arc<Mutex<Option<u32>>>,
-) -> Option<i32> {
+) -> Result<i32, String> {
     let expanded_args: Vec<String> = args.iter().map(|arg| env_vars.expand_vars(arg)).collect();
-
-    let expanded_refs: Vec<&str> = expanded_args.iter().map(String::as_str).collect();
 
     let mut cmd = Command::new(command.path);
 
@@ -63,30 +66,78 @@ pub fn run_command(
         cmd.env(k, v);
     }
 
-    if let Some(pos) = expanded_refs.iter().position(|&r| r == ">" || r == ">>") {
-        let real_args = &expanded_refs[..pos];
-        let file = expanded_refs.get(pos + 1)?;
+    let redirected = apply_redirects(&mut cmd, &expanded_args)?;
+    cmd.args(&redirected.args);
 
-        let file = if expanded_refs[pos] == ">>" {
-            OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(file)
-                .ok()?
-        } else {
-            File::create(file).ok()?
-        };
-
-        cmd.args(real_args).stdout(Stdio::from(file));
-    } else {
-        cmd.args(&expanded_refs);
+    let mut child = cmd
+        .spawn()
+        .map_err(|err| format!("{}: {err}", command.name))?;
+    if let Ok(mut pid) = current_pid.lock() {
+        *pid = Some(child.id());
     }
 
-    let mut child = cmd.spawn().ok()?;
-    *current_pid.lock().unwrap() = Some(child.id());
+    let status = match child.wait() {
+        Ok(status) => status,
+        Err(err) => {
+            if let Ok(mut pid) = current_pid.lock() {
+                *pid = None;
+            }
+            return Err(format!("{}: {err}", command.name));
+        }
+    };
 
-    let status = child.wait().ok()?;
-    *current_pid.lock().unwrap() = None;
+    if let Ok(mut pid) = current_pid.lock() {
+        *pid = None;
+    }
 
-    status.code().or(Some(130))
+    Ok(status.code().unwrap_or(130))
+}
+
+pub fn apply_redirects(cmd: &mut Command, parts: &[String]) -> Result<RedirectedArgs, String> {
+    let mut args = Vec::new();
+    let mut i = 0;
+    let mut stdout_redirected = false;
+
+    while i < parts.len() {
+        match parts[i].as_str() {
+            "<" => {
+                let file = parts
+                    .get(i + 1)
+                    .ok_or("missing input file after '<'".to_string())?;
+                let file = File::open(file)
+                    .map_err(|err| format!("failed to open '{file}' for reading: {err}"))?;
+                cmd.stdin(Stdio::from(file));
+                i += 2;
+            }
+
+            ">" | ">>" => {
+                let file = parts
+                    .get(i + 1)
+                    .ok_or(format!("missing output file after '{}'", parts[i]))?;
+                let file = if parts[i] == ">>" {
+                    OpenOptions::new()
+                        .create(true)
+                        .append(true)
+                        .open(file)
+                        .map_err(|err| format!("failed to open '{file}' for appending: {err}"))?
+                } else {
+                    File::create(file).map_err(|err| format!("failed to create '{file}': {err}"))?
+                };
+
+                cmd.stdout(Stdio::from(file));
+                stdout_redirected = true;
+                i += 2;
+            }
+
+            _ => {
+                args.push(parts[i].clone());
+                i += 1;
+            }
+        }
+    }
+
+    Ok(RedirectedArgs {
+        args,
+        stdout_redirected,
+    })
 }
