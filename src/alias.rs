@@ -9,6 +9,12 @@ pub struct NyAlias {
     alias: HashMap<String, String>,
 }
 
+impl Default for NyAlias {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl NyAlias {
     pub fn new() -> Self {
         Self {
@@ -21,10 +27,7 @@ impl NyAlias {
             Some(part) => match part.as_str() {
                 "--list" => self.list(),
 
-                "--set" => match self.insert(input) {
-                    Some(err) => return Err(err),
-                    None => (),
-                },
+                "--set" => if let Some(err) = self.insert(input) { return Err(err) },
 
                 _ => return Err("Unknown arg".to_string()),
             },
@@ -98,7 +101,7 @@ impl NyAlias {
             return None;
         }
 
-        return Some("Unknown Error! Usage: alias --set <alias> <commands>".to_string());
+        Some("Unknown Error! Usage: alias --set <alias> <commands>".to_string())
     }
 }
 

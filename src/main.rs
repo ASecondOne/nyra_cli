@@ -139,11 +139,10 @@ fn main() {
         let current_pid = current_pid.clone();
 
         if let Err(error) = ctrlc::set_handler(move || {
-            if let Ok(pid) = current_pid.lock() {
-                if let Some(pid) = *pid {
+            if let Ok(pid) = current_pid.lock()
+                && let Some(pid) = *pid {
                     let _ = kill(Pid::from_raw(pid as i32), NixSignal::SIGINT);
                 }
-            }
         }) {
             eprintln!("ctrlc: {error}");
         }
